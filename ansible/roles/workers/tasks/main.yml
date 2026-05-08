@@ -1,0 +1,10 @@
+---
+- name: Read join command from local file
+  set_fact:
+    kube_join_cmd: "{{ lookup('file', '/tmp/kube_join_cmd.sh') | trim }}"
+
+- name: Join cluster
+  command: "{{ kube_join_cmd }}"
+  args:
+    creates: /etc/kubernetes/kubelet.conf
+  when: kube_join_cmd is defined

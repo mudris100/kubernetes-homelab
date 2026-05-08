@@ -1,0 +1,16 @@
+---
+# If true, also wipe containerd state (images, sandboxes, etc.)
+reset_wipe_containerd: true
+
+# If true, remove kubeconfig from root and ansible_user home
+reset_remove_kubeconfig: true
+
+# If true, remove Kubernetes packages (kubeadm, kubelet, kubectl)
+reset_remove_k8s_packages: true
+
+# If true, flush iptables/nftables rules left by kube-proxy
+reset_flush_iptables: true
+
+# User you used in 'common' role (for ~/.kube cleanup)
+reset_ansible_user: "{{ ansible_user | default('ubuntu') }}"
+

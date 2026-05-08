@@ -1,0 +1,102 @@
+---
+- name: Deploy Argo CD, Infrastructure, and Applications
+  hosts: k8s_master
+  become: false
+  vars_files:
+    - group_vars/all.yml
+
+  roles:
+    - role: argocd
+
+  tasks:
+    # -------------------------------------------------------------------------
+    # 1. INSTALL METALLB
+    # -------------------------------------------------------------------------
+    - name: Install MetalLB
+      kubernetes.core.k8s:
+        state: present
+        src:
+          "https://raw.githubusercontent.com/metallb/metallb/{{ metallb_version
+          }}/config/manifests/metallb-native.yaml"
+
+    - name: Wait for MetalLB controller to be ready
+      kubernetes.core.k8s_info:
+        kind: Deployment
+        name: controller
+        namespace: metallb-system
+      register: metallb_status
+      until:
+        - metallb_status.resources is defined
+        - metallb_status.resources | length > 0
+        - metallb_status.resources[0].status.readyReplicas is defined
+        - metallb_status.resources[0].status.readyReplicas ==
+          metallb_status.resources[0].status.replicas
+      retries: 15
+      delay: 10
+
+    - name: Apply MetalLB IP pool and L2 advertisement
+      kubernetes.core.k8s:
+        state: present
+        definition: "{{ item }}"
+      loop: "{{ lookup('file', playbook_dir + '/../k8s/infra/metallb-pool.yml') | from_yaml_all }}"
+
+    # -------------------------------------------------------------------------
+    # 2. INSTALL NGINX INGRESS CONTROLLER
+    # -------------------------------------------------------------------------
+    - name: Install NGINX Ingress Controller
+      kubernetes.core.k8s:
+        state: present
+        src: "https://raw.githubusercontent.com/kubernetes/ingress-nginx/{{
+          ingress_nginx_version }}/deploy/static/provider/baremetal/deploy.yaml"
+
+    - name: Wait for NGINX Ingress Controller to be ready
+      kubernetes.core.k8s_info:
+        kind: Deployment
+        name: ingress-nginx-controller
+        namespace: ingress-nginx
+      register: ingress_status
+      until:
+        - ingress_status.resources is defined
+        - ingress_status.resources | length > 0
+        - ingress_status.resources[0].status.readyReplicas is defined
+        - ingress_status.resources[0].status.readyReplicas ==
+          ingress_status.resources[0].status.replicas
+      retries: 20
+      delay: 10
+
+    - name: Patch NGINX Ingress Service to LoadBalancer
+      kubernetes.core.k8s:
+        state: patched
+        kind: Service
+        name: ingress-nginx-controller
+        namespace: ingress-nginx
+        definition:
+          spec:
+            type: LoadBalancer
+
+    - name: Apply proxy headers ConfigMap
+      kubernetes.core.k8s:
+        state: present
+        definition: "{{ lookup('file', playbook_dir + '/../k8s/infra/proxy-headers.yml') | from_yaml }}"
+
+
+    # -------------------------------------------------------------------------
+    # 3. DEPLOY ARGO CD APPLICATIONS
+    # -------------------------------------------------------------------------
+    - name: Apply Argo CD Applications
+      kubernetes.core.k8s:
+        state: present
+        definition: "{{ lookup('file', playbook_dir + '/../k8s/argocd/' + item) | from_yaml }}"
+      loop:
+        - blog-app.yml
+        - infra-app.yml
+
+    - name: Summary
+      debug:
+        msg:
+          - "========================================="
+          - "  Argo CD, Infra, and Apps Deployed"
+          - "========================================="
+          - "  Argo CD is now managing the workloads."
+          - "  Check the Argo CD UI to monitor sync status."
+          - "========================================="

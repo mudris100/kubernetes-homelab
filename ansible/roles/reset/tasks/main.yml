@@ -1,0 +1,129 @@
+---
+- name: Remove node from cluster (if control plane reachable)
+  command: kubectl delete node {{ inventory_hostname }}
+  delegate_to: "{{ groups['k8s_master'][0] }}"
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  ignore_errors: true
+  when:
+    - groups['k8s_master'] is defined
+    - groups['k8s_master'] | length > 0
+  register: node_delete_result
+  changed_when: "'deleted' in node_delete_result.stdout"
+
+- name: Stop kubelet service
+  systemd:
+    name: kubelet
+    state: stopped
+  ignore_errors: true
+
+- name: kubeadm reset
+  command: kubeadm reset -f
+  register: kubeadm_reset_result
+  changed_when: "'[reset]' in kubeadm_reset_result.stdout"
+  failed_when: false # don't break if node was never initialized
+
+- name: Remove Kubernetes directories
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/kubernetes
+    - /var/lib/kubelet
+    - /var/lib/etcd
+    - /var/lib/cni
+    - /etc/cni/net.d
+    - /run/flannel
+    - /var/run/flannel
+    - /var/run/calico
+    - /opt/cni
+  ignore_errors: true
+
+- name: Remove kubeconfig files
+  when: reset_remove_kubeconfig | bool
+  block:
+    - name: Remove root kubeconfig
+      file:
+        path: /root/.kube
+        state: absent
+      ignore_errors: true
+
+    - name: Remove user kubeconfig
+      file:
+        path: "/home/{{ reset_ansible_user }}/.kube"
+        state: absent
+      ignore_errors: true
+
+- name: Optionally wipe containerd state
+  when: reset_wipe_containerd | bool
+  block:
+    - name: Stop containerd
+      systemd:
+        name: containerd
+        state: stopped
+      ignore_errors: true
+
+    - name: Remove containerd data directories
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /var/lib/containerd
+        - /run/containerd
+      ignore_errors: true
+
+    - name: Start containerd
+      systemd:
+        name: containerd
+        state: started
+        enabled: true
+      ignore_errors: true
+
+- name: Flush iptables rules
+  command: "{{ item }}"
+  loop:
+    - iptables -F
+    - iptables -t nat -F
+    - iptables -t mangle -F
+    - iptables -X
+  ignore_errors: true
+  when: reset_flush_iptables | bool
+
+- name: Unhold Kubernetes packages
+  dpkg_selections:
+    name: "{{ item }}"
+    selection: install
+  loop:
+    - kubelet
+    - kubeadm
+    - kubectl
+  when: reset_remove_k8s_packages | bool
+  ignore_errors: true
+
+- name: Optionally remove Kubernetes packages and Python dependencies
+  when: reset_remove_k8s_packages | bool
+  apt:
+    name:
+      - kubelet
+      - kubeadm
+      - kubectl
+      - python3-kubernetes
+      - python3-yaml
+    state: absent
+    purge: yes
+    autoremove: yes
+  ignore_errors: true
+
+- name: Remove manifests directory
+  file:
+    path: "/home/{{ reset_ansible_user }}/k8s-blog"
+    state: absent
+  ignore_errors: true
+
+- name: Remove local join command file
+  file:
+    path: /tmp/kube_join_cmd.sh
+    state: absent
+  delegate_to: localhost
+  become: false
+  ignore_errors: true

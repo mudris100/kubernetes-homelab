@@ -1,0 +1,15 @@
+---
+# Kubernetes cluster-wide variables
+
+# Kubernetes version
+kubernetes_version: "v1.30"
+
+# Pod network CIDR for Flannel
+pod_network_cidr: "10.244.0.0/16"
+
+# Container runtime
+container_runtime: containerd
+
+# CNI plugin
+cni_plugin: flannel
+flannel_manifest_url: "https://raw.githubusercontent.com/flannel-io/flannel/master/Documentation/kube-flannel.yml"

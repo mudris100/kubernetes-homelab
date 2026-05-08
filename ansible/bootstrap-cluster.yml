@@ -1,0 +1,20 @@
+---
+# Main playbook - Kubernetes cluster bootstrap
+
+- name: Prepare all nodes
+  hosts: k8s_cluster
+  become: true
+  roles:
+    - role: common
+
+- name: Initialize Kubernetes control plane
+  hosts: k8s_master
+  become: true
+  roles:
+    - role: master
+
+- name: Join worker nodes
+  hosts: k8s_workers
+  become: true
+  roles:
+    - role: workers

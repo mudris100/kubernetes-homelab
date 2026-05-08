@@ -1,0 +1,26 @@
+# Versions
+metallb_version: "v0.14.9"
+ingress_nginx_version: "controller-v1.12.1"
+argocd_version: "v2.14.3"
+
+# MetalLB IP pool
+metallb_ip_range: "192.168.88.240-192.168.88.250"
+
+# App
+app_namespace: "default"
+app_image: "mudris100/blog-app:v1"
+app_replicas: 3
+app_host: "blog.local"
+
+# Database
+db_url: "jdbc:postgresql://192.168.88.4:5432/blogdb"
+db_user: "martins"
+db_password: "1234"
+
+# Redis
+redis_host: "192.168.88.4"
+redis_password: "redis"
+
+# Remote directory where YAMLs will be copied
+k8s_manifests_dir: "/home/{{ ansible_user }}/k8s-blog"
+playbook_dir: "/home/martins/homelab-platform/ansible"

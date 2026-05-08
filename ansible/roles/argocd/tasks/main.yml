@@ -1,0 +1,53 @@
+---
+- name: Create argocd namespace
+  command: kubectl create namespace argocd
+  register: create_ns
+  failed_when: false
+  changed_when: "'created' in create_ns.stdout"
+
+- name: Install Argo CD
+  kubernetes.core.k8s:
+    state: present
+    src: "https://raw.githubusercontent.com/argoproj/argo-cd/{{ argocd_version
+      }}/manifests/install.yaml"
+    namespace: argocd
+
+- name: Wait for Argo CD server to be ready
+  kubernetes.core.k8s_info:
+    kind: Deployment
+    name: argocd-server
+    namespace: argocd
+  register: argocd_server_status
+  until:
+    - argocd_server_status.resources is defined
+    - argocd_server_status.resources | length > 0
+    - argocd_server_status.resources[0].status.readyReplicas is defined
+    - argocd_server_status.resources[0].status.readyReplicas ==
+      argocd_server_status.resources[0].status.replicas
+  retries: 20
+  delay: 15
+
+- name: Patch Argo CD server to use LoadBalancer
+  kubernetes.core.k8s:
+    state: patched
+    kind: Service
+    name: argocd-server
+    namespace: argocd
+    definition:
+      spec:
+        type: LoadBalancer
+
+- name: Get Argo CD initial admin password
+  command: >
+    kubectl -n argocd get secret argocd-initial-admin-secret -o
+    jsonpath={.data.password}
+  register: argocd_admin_password_encoded
+  changed_when: false
+
+- name: Decode Argo CD admin password
+  set_fact:
+    argocd_admin_password: "{{ argocd_admin_password_encoded.stdout | b64decode }}"
+
+- name: Display Argo CD Admin Password
+  debug:
+    msg: "Argo CD Admin Password: {{ argocd_admin_password }}"
